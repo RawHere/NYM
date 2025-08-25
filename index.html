@@ -1558,6 +1558,68 @@
                     rgba(255, 255, 255, 0.02) 2px,
                     rgba(255, 255, 255, 0.02) 4px);
         }
+
+        /* Context Menu Styles */
+        .context-menu {
+            position: fixed;
+            background: var(--bg-tertiary);
+            border: 1px solid var(--primary);
+            border-radius: 3px;
+            padding: 5px 0;
+            min-width: 150px;
+            z-index: 3000;
+            display: none;
+            box-shadow: 0 5px 20px rgba(0, 255, 0, 0.3);
+        }
+
+        .context-menu.active {
+            display: block;
+        }
+
+        .context-menu-item {
+            padding: 8px 15px;
+            cursor: pointer;
+            color: var(--text);
+            font-size: 12px;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .context-menu-item:hover {
+            background: rgba(0, 255, 0, 0.1);
+            color: var(--primary);
+        }
+
+        .context-menu-item.danger:hover {
+            background: rgba(255, 0, 0, 0.1);
+            color: var(--danger);
+        }
+
+        .context-menu-separator {
+            height: 1px;
+            background: var(--border);
+            margin: 5px 0;
+        }
+
+        .context-menu-icon {
+            width: 14px;
+            height: 14px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        /* Mobile long-press support */
+        .user-item, .message-author {
+            -webkit-touch-callout: none;
+            -webkit-user-select: none;
+            -khtml-user-select: none;
+            -moz-user-select: none;
+            -ms-user-select: none;
+            user-select: none;
+        }
     </style>
 </head>
 
@@ -1891,6 +1953,23 @@
                 <button class="icon-btn" onclick="closeModal('channelModal')">Cancel</button>
                 <button class="send-btn" onclick="joinChannel()">Join</button>
             </div>
+        </div>
+    </div>
+
+    <!-- User Context Menu -->
+    <div class="context-menu" id="userContextMenu">
+        <div class="context-menu-item" onclick="nym.contextMenuAction('mention')">
+            <span class="context-menu-icon">@</span>
+            <span>Mention</span>
+        </div>
+        <div class="context-menu-item" onclick="nym.contextMenuAction('pm')">
+            <span class="context-menu-icon">💬</span>
+            <span>Send PM</span>
+        </div>
+        <div class="context-menu-separator"></div>
+        <div class="context-menu-item danger" onclick="nym.contextMenuAction('block')">
+            <span class="context-menu-icon">🚫</span>
+            <span>Block User</span>
         </div>
     </div>
 
@@ -3893,7 +3972,13 @@
 
                     messageEl.innerHTML = `
             ${time ? `<span class="message-time">${time}</span>` : ''}
-            <span class="message-author ${authorClass}" onclick="${!message.isPM ? `nym.insertMention('${this.escapeHtml(message.author)}')` : ''}">${this.escapeHtml(message.author)}:</span>
+            <span class="message-author ${authorClass}"
+                  onclick="${!message.isPM ? `nym.insertMention('${this.escapeHtml(message.author)}')` : ''}"
+                  oncontextmenu="nym.showUserContextMenu(event, '${this.escapeHtml(message.author)}', '${message.pubkey || ''}')"
+                  ontouchstart="nym.handleTouchStart(event, '${this.escapeHtml(message.author)}', '${message.pubkey || ''}')"
+                  ontouchend="nym.handleTouchEnd(event)"
+                  data-nym="${this.escapeHtml(message.author)}"
+                  data-pubkey="${message.pubkey || ''}">${this.escapeHtml(message.author)}:</span>
             <span class="message-content">${this.formatMessage(message.content)}</span>
             ${reactionButton}
         `;
@@ -4045,6 +4130,95 @@
                 }
             }
 
+            // Context Menu Functions
+            showUserContextMenu(event, nym, pubkey) {
+                event.preventDefault();
+                event.stopPropagation();
+
+                // Store current context
+                this.contextMenuTarget = { nym, pubkey };
+
+                const menu = document.getElementById('userContextMenu');
+
+                // Position the menu
+                menu.style.left = event.clientX + 'px';
+                menu.style.top = event.clientY + 'px';
+
+                // Show the menu
+                menu.classList.add('active');
+
+                // Hide menu when clicking elsewhere
+                const hideMenu = (e) => {
+                    if (!menu.contains(e.target)) {
+                        menu.classList.remove('active');
+                        document.removeEventListener('click', hideMenu);
+                        document.removeEventListener('contextmenu', hideMenu);
+                    }
+                };
+
+                setTimeout(() => {
+                    document.addEventListener('click', hideMenu);
+                    document.addEventListener('contextmenu', hideMenu);
+                }, 10);
+
+                return false;
+            }
+
+            contextMenuAction(action) {
+                const menu = document.getElementById('userContextMenu');
+                menu.classList.remove('active');
+
+                if (!this.contextMenuTarget) return;
+
+                const { nym, pubkey } = this.contextMenuTarget;
+
+                switch (action) {
+                    case 'mention':
+                        this.insertMention(nym);
+                        break;
+                    case 'pm':
+                        if (pubkey) {
+                            this.openUserPM(nym, pubkey);
+                        } else {
+                            this.showNotification('Error', 'Cannot send PM - user pubkey not available');
+                        }
+                        break;
+                    case 'block':
+                        this.cmdBlock(nym);
+                        break;
+                }
+
+                this.contextMenuTarget = null;
+            }
+
+            // Mobile Touch Support
+            handleTouchStart(event, nym, pubkey) {
+                this.touchStartTime = Date.now();
+                this.touchTarget = { nym, pubkey };
+                this.longPressTimer = setTimeout(() => {
+                    // Trigger context menu on long press (500ms)
+                    this.showUserContextMenu(event, nym, pubkey);
+                    // Add haptic feedback if available
+                    if (navigator.vibrate) {
+                        navigator.vibrate(50);
+                    }
+                }, 500);
+            }
+
+            handleTouchEnd(event) {
+                if (this.longPressTimer) {
+                    clearTimeout(this.longPressTimer);
+                    this.longPressTimer = null;
+                }
+
+                // If it was a quick tap (less than 500ms), don't prevent default click
+                const touchDuration = Date.now() - (this.touchStartTime || 0);
+                if (touchDuration >= 500) {
+                    event.preventDefault();
+                    event.stopPropagation();
+                }
+            }
+
             insertMention(nym) {
                 const input = document.getElementById('messageInput');
                 const currentValue = input.value;
@@ -4141,7 +4315,13 @@
 
                 // Display deduplicated users in sidebar with click to open PM
                 userListContent.innerHTML = displayUsers.map(user => `
-                    <div class="user-item" onclick="nym.openUserPM('${this.escapeHtml(user.nym)}', '${user.pubkey}')" data-nym="${this.escapeHtml(user.nym)}">
+                    <div class="user-item"
+                         onclick="nym.openUserPM('${this.escapeHtml(user.nym)}', '${user.pubkey}')"
+                         oncontextmenu="nym.showUserContextMenu(event, '${this.escapeHtml(user.nym)}', '${user.pubkey}')"
+                         ontouchstart="nym.handleTouchStart(event, '${this.escapeHtml(user.nym)}', '${user.pubkey}')"
+                         ontouchend="nym.handleTouchEnd(event)"
+                         data-nym="${this.escapeHtml(user.nym)}"
+                         data-pubkey="${user.pubkey}">
                         <span class="user-status ${user.status}"></span>
                         <span>${this.escapeHtml(user.nym)}</span>
                     </div>
@@ -4896,8 +5076,7 @@
                 });
 
                 // Clear unread count
-                const unreadKey = geohash ? `#${geohash}` : channel;
-                this.clearUnreadCount(unreadKey);
+                this.clearUnreadCount(displayName);
 
                 // Load channel messages
                 this.loadChannelMessages(displayName);
@@ -5011,16 +5190,12 @@
             }
 
             clearUnreadCount(channel) {
-                const storageKey = channel.startsWith('#') && !this.isValidGeohash(channel.substring(1))
-                    ? channel.substring(1)
-                    : channel;
-
-                this.unreadCounts.set(storageKey, 0);
+                this.unreadCounts.set(channel, 0);
 
                 // Handle PM unread counts using conversation key
-                if (storageKey.startsWith('pm-')) {
+                if (channel.startsWith('pm-')) {
                     // Extract the other user's pubkey from conversation key
-                    const keys = storageKey.substring(3).split('-');
+                    const keys = channel.substring(3).split('-');
                     const otherPubkey = keys.find(k => k !== this.pubkey);
                     if (otherPubkey) {
                         const badge = document.querySelector(`[data-pubkey="${otherPubkey}"] .unread-badge`);
@@ -5030,20 +5205,10 @@
                     }
                 } else {
                     // Regular channel unread counts
-                    let selector;
-                    if (channel.startsWith('#')) {
-                        const channelName = channel.substring(1);
-                        if (this.isValidGeohash(channelName)) {
-                            // It's a geohash
-                            selector = `[data-geohash="${channelName}"]`;
-                        } else {
-                            // It's a standard channel with # prefix in display
-                            selector = `[data-channel="${channelName}"][data-geohash=""]`;
-                        }
-                    } else {
-                        // Standard channel without # prefix
-                        selector = `[data-channel="${channel}"][data-geohash=""]`;
-                    }
+                    const isGeohash = channel.startsWith('#') && channel.length <= 13;
+                    const selector = isGeohash ?
+                        `[data-geohash="${channel.substring(1)}"]` :
+                        `[data-channel="${channel.replace('#', '')}"][data-geohash=""]`;
 
                     const badge = document.querySelector(`${selector} .unread-badge`);
                     if (badge) {
@@ -5622,6 +5787,28 @@
                     nym.updateUserList();
                 }
             }, 30000);
+
+            // Global context menu handlers
+            document.addEventListener('click', (e) => {
+                const contextMenu = document.getElementById('userContextMenu');
+                if (contextMenu && !contextMenu.contains(e.target)) {
+                    contextMenu.classList.remove('active');
+                }
+            });
+
+            document.addEventListener('contextmenu', (e) => {
+                const contextMenu = document.getElementById('userContextMenu');
+                if (contextMenu && !contextMenu.contains(e.target) && !e.target.closest('.user-item, .message-author')) {
+                    contextMenu.classList.remove('active');
+                }
+            });
+
+            // Prevent context menu on long press for mobile
+            document.addEventListener('touchstart', (e) => {
+                if (e.target.closest('.user-item, .message-author')) {
+                    e.preventDefault();
+                }
+            }, { passive: false });
         });
     </script>
 </body>
