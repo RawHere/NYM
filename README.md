@@ -1,3 +1,8 @@
+I HAVE VIBE CODED SOME STUFFS GO TO THE OG ONE AND HELP THERE. 
+ALSO TAKE MY CODE AND MERGE IT TO THE OG NYM 
+NYM IS COOL AI IS COOL NOT ME. 
+
+
 ```
 ███╗   ██╗██╗   ██╗███╗   ███╗
 ████╗  ██║╚██╗ ██╔╝████╗ ████║
